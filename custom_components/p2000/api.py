@@ -28,7 +28,7 @@ class P2000Api:
             async with self._session.get(url, allow_redirects=False, timeout=8) as response:
                 if response.status == 200:
                     try:
-                        data = await response.json()
+                        data = await response.json(content_type=None)
                     except Exception:
                         text = await response.text()
                         data = json.loads(text)
@@ -155,10 +155,8 @@ class P2000Api:
 
                     full_text = (title + " " + description).lower()
 
-                    if prio1_only:
-                        prio = self._safe_text(item, "prio")
-                        if prio and prio != "1":
-                            continue
+                    if prio1_only and self._safe_text(item, "prio") != "1":
+                        continue
 
                     if wanted_cities:
                         if not any(city in full_text for city in wanted_cities):

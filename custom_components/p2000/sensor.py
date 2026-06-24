@@ -33,7 +33,7 @@ async def async_setup_entry(
 ) -> None:
     config = {**entry.data, **entry.options}
     name = config.get(CONF_NAME, DEFAULT_NAME)
-    icon = config.get(CONF_ICON, DEFAULT_ICON)
+    icon = config.get(CONF_ICON) or DEFAULT_ICON
 
     api_filter = {}
     for prop in [CONF_GEMEENTEN, CONF_WOONPLAATSEN, CONF_CAPCODES, CONF_REGIOS]:
@@ -49,8 +49,6 @@ async def async_setup_entry(
     for prop in [CONF_PRIO1, CONF_LIFE]:
         if config.get(prop):
             api_filter[prop] = 1
-
-    icon = config.get(CONF_ICON) or DEFAULT_ICON
     session = async_get_clientsession(hass)
     api = P2000Api(session)
 
@@ -62,10 +60,10 @@ async def async_setup_entry(
 
 class P2000Sensor(SensorEntity):
     def __init__(self, api, name, icon, api_filter, entry_id):
-        self.api = api
-        self.api_filter = api_filter
+        self._api = api
+        self._api_filter = api_filter
         self._attr_icon = icon
-        self._state = None
+        self._attr_native_value = None
         self._attr_name = name
         self._attr_unique_id = f"p2000_{entry_id}"
         self._attr_extra_state_attributes = {}
@@ -76,12 +74,8 @@ class P2000Sensor(SensorEntity):
             "model": "P2000 Sensor",
         }
 
-    @property
-    def state(self):
-        return self._state
-
     async def async_update(self):
-        data = await self.api.get_data(self.api_filter)
+        data = await self._api.get_data(self._api_filter)
 
         if not data:
             return
@@ -92,4 +86,4 @@ class P2000Sensor(SensorEntity):
             return
 
         self._attr_extra_state_attributes = data
-        self._state = tekst[:_MAX_STATE_LENGTH]
+        self._attr_native_value = tekst[:_MAX_STATE_LENGTH]
