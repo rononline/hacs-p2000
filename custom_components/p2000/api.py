@@ -3,11 +3,15 @@ import logging
 import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 import urllib.parse
 
 _LOGGER = logging.getLogger(__name__)
 
 _POSTCODE_PREFIX = re.compile(r'^\d{4}\s*[A-Z]{2}\s+')
+_PRIO1_RSS = re.compile(r'^[A-Z]\s*1[\s,\[]', re.IGNORECASE)
+
+DIENSTID_LIFELINER = "5"
 
 
 class P2000CommunicationError(Exception):
@@ -47,11 +51,65 @@ class P2000Api:
         except Exception as exc:
             _LOGGER.warning("Fout bij P2000 API: %s. Start backup procedure.", exc)
 
-        # Alleen hier bij een communicatiefout met de primaire API
         return await self._get_rich_rss_backup(api_filter)
+
+    # --- helpers voor hoofd- én subitem-analyse ---
 
     def _clean_plaats(self, plaats: str) -> str:
         return _POSTCODE_PREFIX.sub('', plaats).strip()
+
+    def _all_dienst_ids(self, melding):
+        """Verzamel dienstids van hoofdmelding én alle subitems."""
+        ids = {str(melding.get("dienstid") or "")}
+        for sub in (melding.get("subitems") or []):
+            ids.add(str(sub.get("dienstid") or ""))
+        ids.discard("")
+        return ids
+
+    def _all_capcodes(self, melding):
+        """Verzamel capcodes van hoofdmelding én alle subitems."""
+        codes = {c.get("capcode", "") for c in (melding.get("capcodes") or [])}
+        for sub in (melding.get("subitems") or []):
+            codes |= {c.get("capcode", "") for c in (sub.get("capcodes") or [])}
+        codes.discard("")
+        return codes
+
+    def _has_prio1(self, melding):
+        if melding.get("prio1") == "1":
+            return True
+        return any(sub.get("prio1") == "1" for sub in (melding.get("subitems") or []))
+
+    def _is_lifeliner(self, melding):
+        return DIENSTID_LIFELINER in self._all_dienst_ids(melding)
+
+    def _matches_filter(self, melding, wanted_places, wanted_services, wanted_regios,
+                        wanted_capcodes, prio1_only, lifeliners_only):
+        if prio1_only and not self._has_prio1(melding):
+            return False
+
+        if lifeliners_only and not self._is_lifeliner(melding):
+            return False
+
+        if wanted_places:
+            plaats = (melding.get("plaats") or "").lower()
+            tekst = (melding.get("melding") or melding.get("tekstmelding") or "").lower()
+            if not any(p in plaats or p in tekst for p in wanted_places):
+                return False
+
+        if wanted_regios:
+            regio = (melding.get("regio") or "").lower()
+            if not any(r in regio for r in wanted_regios):
+                return False
+
+        if wanted_services:
+            if not any(code in self._all_dienst_ids(melding) for code in wanted_services):
+                return False
+
+        if wanted_capcodes:
+            if not wanted_capcodes & self._all_capcodes(melding):
+                return False
+
+        return True
 
     def _parse_json_response(self, data, api_filter):
         meldingen = data.get("meldingen") or []
@@ -62,7 +120,7 @@ class P2000Api:
             p.lower()
             for p in api_filter.get("woonplaatsen", []) + api_filter.get("gemeenten", [])
         ]
-        wanted_services = api_filter.get("diensten", [])
+        wanted_services = [str(s) for s in api_filter.get("diensten", [])]
         wanted_regios = [r.lower() for r in api_filter.get("regios", [])]
         wanted_capcodes = set(api_filter.get("capcodes", []))
         prio1_only = bool(api_filter.get("prio1"))
@@ -72,42 +130,30 @@ class P2000Api:
             if melding.get("plaats"):
                 melding["plaats"] = self._clean_plaats(melding["plaats"])
 
-            if prio1_only and melding.get("prio1") != "1":
-                continue
+        filter_args = (wanted_places, wanted_services, wanted_regios,
+                       wanted_capcodes, prio1_only, lifeliners_only)
 
-            if lifeliners_only and not melding.get("lifeliner"):
-                continue
-
-            if wanted_places:
-                plaats = (melding.get("plaats") or "").lower()
-                tekst = (melding.get("melding") or melding.get("tekstmelding") or "").lower()
-                if not any(p in plaats or p in tekst for p in wanted_places):
+        # Twee passes: eerst voorkeur voor meldingen met een concrete dienst
+        match = None
+        for skip_gereserveerd in (True, False):
+            for melding in meldingen:
+                dienst = (melding.get("dienst") or "").lower()
+                if skip_gereserveerd and dienst in ("gereserveerd", ""):
                     continue
+                if self._matches_filter(melding, *filter_args):
+                    match = melding
+                    break
+            if match:
+                break
 
-            if wanted_regios:
-                regio = (melding.get("regio") or "").lower()
-                if not any(r in regio for r in wanted_regios):
-                    continue
+        if match:
+            if "lat" in match:
+                match["latitude"] = match.pop("lat")
+            if "lon" in match:
+                match["longitude"] = match.pop("lon")
+        return match
 
-            if wanted_services:
-                dienst_id = str(melding.get("dienstid") or "")
-                if not any(str(code) == dienst_id for code in wanted_services):
-                    continue
-
-            if wanted_capcodes:
-                melding_capcodes = {
-                    c.get("capcode", "") for c in (melding.get("capcodes") or [])
-                }
-                if not wanted_capcodes & melding_capcodes:
-                    continue
-
-            if "lat" in melding:
-                melding["latitude"] = melding.pop("lat")
-            if "lon" in melding:
-                melding["longitude"] = melding.pop("lon")
-            return melding
-
-        return None
+    # --- RSS backup ---
 
     def _safe_text(self, item, tag_name):
         el = item.find(tag_name)
@@ -115,19 +161,28 @@ class P2000Api:
             return el.text
         return ""
 
+    def _parse_rss_date(self, pub_date):
+        try:
+            return parsedate_to_datetime(pub_date).strftime("%Y-%m-%d")
+        except Exception:
+            return datetime.now().strftime("%Y-%m-%d")
+
     async def _get_rich_rss_backup(self, api_filter):
-        wanted_services = api_filter.get("diensten", [])
+        wanted_services = [str(s) for s in api_filter.get("diensten", [])]
         wanted_cities = [
             g.lower()
             for g in api_filter.get("gemeenten", []) + api_filter.get("woonplaatsen", [])
         ]
         wanted_regios = [r.lower() for r in api_filter.get("regios", [])]
         wanted_capcodes = set(api_filter.get("capcodes", []))
+        prio1_only = bool(api_filter.get("prio1"))
+        lifeliners_only = bool(api_filter.get("lifeliners"))
         service_mapping = {
             "1": "politie",
             "2": "brandweer",
             "3": "ambu",
             "4": "kustwacht",
+            "5": "lifeliner",
         }
 
         try:
@@ -157,6 +212,14 @@ class P2000Api:
 
                     full_text = (title + " " + message).lower()
 
+                    if prio1_only:
+                        if not (_PRIO1_RSS.match(title) or _PRIO1_RSS.match(message)):
+                            continue
+
+                    if lifeliners_only:
+                        if "lifeliner" not in rss_dienst and "lifeliner" not in full_text:
+                            continue
+
                     if wanted_cities:
                         if not any(city in full_text for city in wanted_cities):
                             continue
@@ -171,7 +234,7 @@ class P2000Api:
 
                     if wanted_services:
                         if not any(
-                            service_mapping.get(str(c), "") in rss_dienst
+                            service_mapping.get(c, "") in rss_dienst
                             for c in wanted_services
                         ):
                             continue
@@ -180,7 +243,7 @@ class P2000Api:
                         "melding": message or title,
                         "tekstmelding": message or title,
                         "tijd": pub_date,
-                        "datum": datetime.now().strftime("%Y-%m-%d"),
+                        "datum": self._parse_rss_date(pub_date),
                         "capcode": code or "RSS-BACKUP",
                         "dienst": self._safe_text(item, "Dienst") or "RSS",
                         "regio": reg_name,

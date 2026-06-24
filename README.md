@@ -41,7 +41,7 @@ Go to **Settings → Devices & Services → Add Integration** and search for **P
 | Regions | Comma-separated regio names |
 | Emergency services | Select one or more: Politie, Brandweer, Ambulance, Kustwacht |
 | Priority 1 only | Only show prio 1 alerts |
-| Lifeliners | Include lifeliner alerts |
+| Lifeliners | Show lifeliners only (excludes all other services) |
 
 All filter fields are optional. Leaving them empty returns all messages from the primary feed.
 
