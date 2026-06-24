@@ -1,0 +1,13 @@
+{
+  "domain": "p2000",
+  "name": "P2000",
+  "documentation": "https://github.com/leeuwte/p2000",
+  "issue_tracker": "https://github.com/leeuwte/p2000/issues",
+  "dependencies": [],
+  "codeowners": ["@leeuwte"],
+  "requirements": [],
+  "version": "1.0.0",
+  "iot_class": "cloud_polling",
+  "config_flow": true,
+  "homeassistant": "2023.1.0"
+}

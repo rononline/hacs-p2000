@@ -6,6 +6,7 @@ import urllib.parse
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class P2000Api:
     URL_PRIMARY = "https://beta.alarmeringdroid.nl/api2/find/"
     URL_BACKUP = "http://p2000.brandweer-berkel-enschot.nl/homeassistant/rss.asp"
@@ -73,7 +74,6 @@ class P2000Api:
         """Haalt de rijke RSS op en filtert deze handmatig."""
 
         wanted_services = api_filter.get("diensten", [])
-        # Combineer gemeenten én woonplaatsen voor locatiefiltering
         wanted_cities = [
             g.lower()
             for g in api_filter.get("gemeenten", []) + api_filter.get("woonplaatsen", [])

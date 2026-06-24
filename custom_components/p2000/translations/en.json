@@ -1,0 +1,55 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up P2000",
+        "description": "Configure which P2000 emergency alerts you want to track. Location and capcode fields are comma-separated.",
+        "data": {
+          "name": "Name",
+          "icon": "Icon",
+          "gemeenten": "Municipalities",
+          "woonplaatsen": "Cities / villages",
+          "capcodes": "Capcodes",
+          "regios": "Regions",
+          "diensten": "Emergency services",
+          "prio1": "Priority 1 only",
+          "lifeliners": "Show lifeliners"
+        },
+        "data_description": {
+          "gemeenten": "Comma-separated, e.g. Amsterdam, Utrecht",
+          "woonplaatsen": "Comma-separated, e.g. Amstelveen, Diemen",
+          "capcodes": "Comma-separated capcodes",
+          "regios": "Comma-separated regions"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "A sensor with this name is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Update P2000",
+        "description": "Adjust filter settings. Location and capcode fields are comma-separated.",
+        "data": {
+          "name": "Name",
+          "icon": "Icon",
+          "gemeenten": "Municipalities",
+          "woonplaatsen": "Cities / villages",
+          "capcodes": "Capcodes",
+          "regios": "Regions",
+          "diensten": "Emergency services",
+          "prio1": "Priority 1 only",
+          "lifeliners": "Show lifeliners"
+        },
+        "data_description": {
+          "gemeenten": "Comma-separated, e.g. Amsterdam, Utrecht",
+          "woonplaatsen": "Comma-separated, e.g. Amstelveen, Diemen",
+          "capcodes": "Comma-separated capcodes",
+          "regios": "Comma-separated regions"
+        }
+      }
+    }
+  }
+}

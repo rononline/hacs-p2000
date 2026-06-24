@@ -1,0 +1,55 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "P2000 instellen",
+        "description": "Stel in welke P2000-meldingen je wilt volgen. Velden voor locatie en capcodes zijn komma-gescheiden.",
+        "data": {
+          "name": "Naam",
+          "icon": "Icoon",
+          "gemeenten": "Gemeenten",
+          "woonplaatsen": "Woonplaatsen",
+          "capcodes": "Capcodes",
+          "regios": "Regio's",
+          "diensten": "Hulpdiensten",
+          "prio1": "Alleen prio 1",
+          "lifeliners": "Lifeliners tonen"
+        },
+        "data_description": {
+          "gemeenten": "Komma-gescheiden, bijv. Amsterdam, Utrecht",
+          "woonplaatsen": "Komma-gescheiden, bijv. Amstelveen, Diemen",
+          "capcodes": "Komma-gescheiden capcodes",
+          "regios": "Komma-gescheiden regio's"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Een sensor met deze naam is al geconfigureerd."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "P2000 aanpassen",
+        "description": "Pas de filterinstellingen aan. Velden voor locatie en capcodes zijn komma-gescheiden.",
+        "data": {
+          "name": "Naam",
+          "icon": "Icoon",
+          "gemeenten": "Gemeenten",
+          "woonplaatsen": "Woonplaatsen",
+          "capcodes": "Capcodes",
+          "regios": "Regio's",
+          "diensten": "Hulpdiensten",
+          "prio1": "Alleen prio 1",
+          "lifeliners": "Lifeliners tonen"
+        },
+        "data_description": {
+          "gemeenten": "Komma-gescheiden, bijv. Amsterdam, Utrecht",
+          "woonplaatsen": "Komma-gescheiden, bijv. Amstelveen, Diemen",
+          "capcodes": "Komma-gescheiden capcodes",
+          "regios": "Komma-gescheiden regio's"
+        }
+      }
+    }
+  }
+}
