@@ -102,6 +102,34 @@ class TestJsonParser(unittest.TestCase):
             self.api._parse_json_response({"meldingen": "invalid"}, {})
         )
 
+    def test_newest_incident_wins_over_older_concrete_service(self):
+        data = {
+            "meldingen": [
+                {
+                    "melding": "Nieuwste generieke melding",
+                    "dienstid": "2",
+                    "dienst": "Gereserveerd",
+                    "regio": "Utrecht",
+                    "plaats": "Utrecht",
+                    "prio1": "1",
+                    "capcodes": [],
+                },
+                {
+                    "melding": "Oudere concrete melding",
+                    "dienstid": "2",
+                    "dienst": "Brandweer",
+                    "regio": "Utrecht",
+                    "plaats": "Utrecht",
+                    "prio1": "1",
+                    "capcodes": [],
+                },
+            ]
+        }
+
+        result = self.api._parse_json_response(data, {"diensten": ["2"]})
+
+        self.assertEqual("Nieuwste generieke melding", result["melding"])
+
 
 class TestRssParser(unittest.TestCase):
     def setUp(self):
@@ -175,6 +203,16 @@ class TestRssParser(unittest.TestCase):
     def test_invalid_xml_raises_communication_error(self):
         with self.assertRaises(API_MODULE.P2000CommunicationError):
             self.api._parse_rss_response("<rss>", {})
+
+    def test_prio_filter_rejects_unknown_letter_one_codes(self):
+        rss = self.rss.replace(
+            "Prio 1 Incidentstraat Amsterdam",
+            "B1 Incidentstraat Amsterdam",
+        )
+
+        result = self.api._parse_rss_response(rss, {"prio1": 1})
+
+        self.assertEqual("A1 Lifeliner naar Gouda", result["melding"])
 
 
 if __name__ == "__main__":

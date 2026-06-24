@@ -10,7 +10,7 @@ _LOGGER = logging.getLogger(__name__)
 
 _POSTCODE_PREFIX = re.compile(r"^\d{4}\s*[A-Z]{2}\s+")
 _PRIO1_RSS = re.compile(
-    r"^(?:[A-Z]\s*1|PRIO\s*1)(?=[\s,\[])",
+    r"^(?:A\s*1|P\s*1|PRIO\s*1)(?=[\s,\[])",
     re.IGNORECASE,
 )
 
@@ -83,13 +83,6 @@ class P2000Api:
     @staticmethod
     def _clean_plaats(plaats):
         return _POSTCODE_PREFIX.sub("", plaats).strip()
-
-    @staticmethod
-    def _iter_json_items(meldingen):
-        """Yield every main item and subitem as an independent alert."""
-        for melding in meldingen:
-            yield melding
-            yield from melding.get("subitems") or []
 
     @staticmethod
     def _json_capcodes(melding):
@@ -208,16 +201,16 @@ class P2000Api:
             bool(api_filter.get("lifeliners")),
         )
 
-        candidates = list(self._iter_json_items(meldingen))
-
-        # Geef bij gelijke feedvolgorde voorkeur aan een concrete dienst.
-        for skip_reserved in (True, False):
-            for melding in candidates:
-                dienst = (melding.get("dienst") or "").lower()
-                if skip_reserved and dienst in ("", "gereserveerd"):
-                    continue
-                if self._matches_json_filter(melding, *filter_args):
-                    return self._normalize_json_alert(melding)
+        # Per incident (in feedvolgorde) de beste subitem kiezen.
+        for melding in meldingen:
+            items = [melding] + list(melding.get("subitems") or [])
+            for skip_reserved in (True, False):
+                for item in items:
+                    dienst = (item.get("dienst") or "").lower()
+                    if skip_reserved and dienst in ("", "gereserveerd"):
+                        continue
+                    if self._matches_json_filter(item, *filter_args):
+                        return self._normalize_json_alert(item)
 
         return None
 

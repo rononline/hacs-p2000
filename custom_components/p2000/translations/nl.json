@@ -25,6 +25,9 @@
     }
   },
   "options": {
+    "abort": {
+      "changes_applied": "Instellingen opgeslagen."
+    },
     "step": {
       "init": {
         "title": "P2000 aanpassen",
