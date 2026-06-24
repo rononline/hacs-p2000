@@ -13,7 +13,7 @@
           "regios": "Regio's",
           "diensten": "Hulpdiensten",
           "prio1": "Alleen prio 1",
-          "lifeliners": "Lifeliners tonen"
+          "lifeliners": "Alleen lifeliners"
         },
         "data_description": {
           "gemeenten": "Komma-gescheiden, bijv. Amsterdam, Utrecht",
@@ -23,9 +23,6 @@
         }
       }
     },
-    "abort": {
-      "already_configured": "Een sensor met deze naam is al geconfigureerd."
-    }
   },
   "options": {
     "step": {
@@ -41,7 +38,7 @@
           "regios": "Regio's",
           "diensten": "Hulpdiensten",
           "prio1": "Alleen prio 1",
-          "lifeliners": "Lifeliners tonen"
+          "lifeliners": "Alleen lifeliners"
         },
         "data_description": {
           "gemeenten": "Komma-gescheiden, bijv. Amsterdam, Utrecht",

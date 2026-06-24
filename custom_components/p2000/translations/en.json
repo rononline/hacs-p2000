@@ -13,7 +13,7 @@
           "regios": "Regions",
           "diensten": "Emergency services",
           "prio1": "Priority 1 only",
-          "lifeliners": "Show lifeliners"
+          "lifeliners": "Lifeliners only"
         },
         "data_description": {
           "gemeenten": "Comma-separated, e.g. Amsterdam, Utrecht",
@@ -23,9 +23,6 @@
         }
       }
     },
-    "abort": {
-      "already_configured": "A sensor with this name is already configured."
-    }
   },
   "options": {
     "step": {
@@ -41,7 +38,7 @@
           "regios": "Regions",
           "diensten": "Emergency services",
           "prio1": "Priority 1 only",
-          "lifeliners": "Show lifeliners"
+          "lifeliners": "Lifeliners only"
         },
         "data_description": {
           "gemeenten": "Comma-separated, e.g. Amsterdam, Utrecht",

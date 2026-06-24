@@ -10,9 +10,13 @@ _LOGGER = logging.getLogger(__name__)
 _POSTCODE_PREFIX = re.compile(r'^\d{4}\s*[A-Z]{2}\s+')
 
 
+class P2000CommunicationError(Exception):
+    """Raised when all P2000 data sources are unreachable."""
+
+
 class P2000Api:
     URL_PRIMARY = "https://beta.alarmeringdroid.nl/api2/find/"
-    URL_BACKUP = "http://p2000.brandweer-berkel-enschot.nl/homeassistant/rss.asp"
+    URL_BACKUP = "https://p2000.brandweer-berkel-enschot.nl/homeassistant/rss.asp"
 
     def __init__(self, session):
         self._session = session
@@ -32,23 +36,21 @@ class P2000Api:
                     except Exception:
                         text = await response.text()
                         data = json.loads(text)
-
-                    result = self._parse_json_response(data, api_filter)
-                    if result:
-                        return result
+                    # Primaire API bereikbaar: direct returnen, geen RSS-fallback
+                    return self._parse_json_response(data, api_filter)
                 else:
                     _LOGGER.warning(
-                        "P2000 API fout (Status %s). Overschakelen naar Rijke RSS Backup.",
+                        "P2000 API fout (Status %s). Overschakelen naar backup.",
                         response.status,
                     )
 
         except Exception as exc:
             _LOGGER.warning("Fout bij P2000 API: %s. Start backup procedure.", exc)
 
+        # Alleen hier bij een communicatiefout met de primaire API
         return await self._get_rich_rss_backup(api_filter)
 
     def _clean_plaats(self, plaats: str) -> str:
-        """Strip postcode prefix, e.g. '3079XH  Rotterdam' → 'Rotterdam'."""
         return _POSTCODE_PREFIX.sub('', plaats).strip()
 
     def _parse_json_response(self, data, api_filter):
@@ -119,7 +121,8 @@ class P2000Api:
             g.lower()
             for g in api_filter.get("gemeenten", []) + api_filter.get("woonplaatsen", [])
         ]
-        prio1_only = bool(api_filter.get("prio1"))
+        wanted_regios = [r.lower() for r in api_filter.get("regios", [])]
+        wanted_capcodes = set(api_filter.get("capcodes", []))
         service_mapping = {
             "1": "politie",
             "2": "brandweer",
@@ -132,50 +135,55 @@ class P2000Api:
                 self.URL_BACKUP, allow_redirects=True, timeout=10
             ) as response:
                 if response.status != 200:
-                    return None
+                    raise P2000CommunicationError(
+                        f"Backup RSS HTTP fout: status {response.status}"
+                    )
 
                 content = await response.text()
                 try:
                     root = ET.fromstring(content)
-                except ET.ParseError:
-                    _LOGGER.error("Kon RSS XML niet parsen.")
-                    return None
+                except ET.ParseError as exc:
+                    raise P2000CommunicationError(f"Backup RSS XML parse fout: {exc}") from exc
 
-                items = root.findall(".//item")
-                if not items:
-                    return None
-
-                for item in items:
+                for item in root.findall(".//item"):
                     title = self._safe_text(item, "title")
-                    description = self._safe_text(item, "description")
+                    message = self._safe_text(item, "message")
                     pub_date = self._safe_text(item, "pubDate")
-                    rss_dienst = self._safe_text(item, "dienst").lower()
+                    rss_dienst = self._safe_text(item, "Dienst").lower()
+                    code = self._safe_text(item, "code")
+                    reg_name = self._safe_text(item, "RegName")
                     latitude = self._safe_text(item, "lat") or None
                     longitude = self._safe_text(item, "lon") or None
 
-                    full_text = (title + " " + description).lower()
-
-                    if prio1_only and self._safe_text(item, "prio") != "1":
-                        continue
+                    full_text = (title + " " + message).lower()
 
                     if wanted_cities:
                         if not any(city in full_text for city in wanted_cities):
                             continue
 
+                    if wanted_regios:
+                        if not any(r in reg_name.lower() for r in wanted_regios):
+                            continue
+
+                    if wanted_capcodes:
+                        if not code or code not in wanted_capcodes:
+                            continue
+
                     if wanted_services:
                         if not any(
-                            service_mapping.get(str(code), "") in rss_dienst
-                            or service_mapping.get(str(code), "") in full_text
-                            for code in wanted_services
+                            service_mapping.get(str(c), "") in rss_dienst
+                            for c in wanted_services
                         ):
                             continue
 
                     return {
-                        "melding": description or title,
+                        "melding": message or title,
+                        "tekstmelding": message or title,
                         "tijd": pub_date,
                         "datum": datetime.now().strftime("%Y-%m-%d"),
-                        "capcode": "RSS-BACKUP",
-                        "dienst": self._safe_text(item, "dienst") or "RSS",
+                        "capcode": code or "RSS-BACKUP",
+                        "dienst": self._safe_text(item, "Dienst") or "RSS",
+                        "regio": reg_name,
                         "prio": "Unknown",
                         "latitude": latitude,
                         "longitude": longitude,
@@ -183,6 +191,7 @@ class P2000Api:
 
                 return None
 
+        except P2000CommunicationError:
+            raise
         except Exception as exc:
-            _LOGGER.error("Fout bij verwerken backup RSS: %s", exc)
-            return None
+            raise P2000CommunicationError(f"Fout bij backup RSS: {exc}") from exc

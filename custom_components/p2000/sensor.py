@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .api import P2000Api
+from .api import P2000Api, P2000CommunicationError
 from .const import (
     CONF_CAPCODES,
     CONF_DIENSTEN,
@@ -67,6 +67,7 @@ class P2000Sensor(SensorEntity):
         self._attr_native_value = None
         self._attr_name = name
         self._attr_unique_id = f"p2000_{entry_id}"
+        self._attr_available = True
         self._attr_extra_state_attributes = {}
         self._attr_device_info = {
             "identifiers": {("p2000", entry_id)},
@@ -76,7 +77,14 @@ class P2000Sensor(SensorEntity):
         }
 
     async def async_update(self):
-        data = await self._api.get_data(self._api_filter)
+        try:
+            data = await self._api.get_data(self._api_filter)
+        except P2000CommunicationError as exc:
+            _LOGGER.warning("P2000 niet bereikbaar: %s", exc)
+            self._attr_available = False
+            return
+
+        self._attr_available = True
 
         if not data:
             return
