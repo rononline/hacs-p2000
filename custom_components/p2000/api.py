@@ -32,7 +32,7 @@ class P2000Api:
                         text = await response.text()
                         data = json.loads(text)
 
-                    result = self._parse_json_response(data)
+                    result = self._parse_json_response(data, api_filter)
                     if result:
                         return result
                 else:
@@ -46,22 +46,38 @@ class P2000Api:
 
         return await self._get_rich_rss_backup(api_filter)
 
-    def _parse_json_response(self, data):
-        """Verwerk de officiële JSON data."""
+    def _parse_json_response(self, data, api_filter):
+        """Verwerk de officiële JSON data en filter client-side."""
         meldingen = data.get("meldingen") or []
         if not meldingen:
             return None
 
-        result = meldingen[0]
-        if not result:
-            return None
+        wanted_places = [
+            p.lower()
+            for p in api_filter.get("woonplaatsen", []) + api_filter.get("gemeenten", [])
+        ]
+        wanted_services = api_filter.get("diensten", [])
+        service_mapping = {"1": "politie", "2": "brandweer", "3": "ambu", "4": "kustwacht"}
 
-        if "lat" in result:
-            result["latitude"] = result.pop("lat")
-        if "lon" in result:
-            result["longitude"] = result.pop("lon")
+        for melding in meldingen:
+            if wanted_places:
+                plaats = (melding.get("plaats") or "").lower()
+                melding_text = (melding.get("melding") or melding.get("tekstmelding") or "").lower()
+                if not any(p in plaats or p in melding_text for p in wanted_places):
+                    continue
 
-        return result
+            if wanted_services:
+                dienst_id = str(melding.get("dienstid") or "")
+                if not any(str(code) == dienst_id for code in wanted_services):
+                    continue
+
+            if "lat" in melding:
+                melding["latitude"] = melding.pop("lat")
+            if "lon" in melding:
+                melding["longitude"] = melding.pop("lon")
+            return melding
+
+        return None
 
     def _safe_text(self, item, tag_name):
         """Veilige manier om tekst uit XML te halen zonder te crashen."""

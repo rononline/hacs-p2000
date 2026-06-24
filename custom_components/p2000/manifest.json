@@ -6,7 +6,7 @@
   "dependencies": [],
   "codeowners": ["@leeuwte"],
   "requirements": [],
-  "version": "1.0.0",
+  "version": "1.0.1",
   "iot_class": "cloud_polling",
   "config_flow": true,
   "homeassistant": "2023.1.0"
