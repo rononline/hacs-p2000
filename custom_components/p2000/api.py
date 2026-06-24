@@ -37,6 +37,7 @@ class P2000Api:
 
     def __init__(self, session):
         self._session = session
+        self._primary_failed = False
 
     async def get_data(self, api_filter):
         if not api_filter:
@@ -44,7 +45,7 @@ class P2000Api:
 
         try:
             json_str = json.dumps(api_filter, separators=(",", ":"))
-            url = self.URL_PRIMARY + urllib.parse.quote(json_str)
+            url = self.URL_PRIMARY + urllib.parse.quote(json_str, safe="")
 
             async with self._session.get(
                 url, allow_redirects=False, timeout=8
@@ -56,18 +57,26 @@ class P2000Api:
                         text = await response.text()
                         data = json.loads(text)
 
+                    if self._primary_failed:
+                        _LOGGER.info("P2000 primaire API hersteld")
+                        self._primary_failed = False
+
                     # Een bereikbare primaire API zonder match is geen storing.
                     return self._parse_json_response(data, api_filter)
 
-                _LOGGER.warning(
-                    "P2000 API fout (status %s). Overschakelen naar backup",
-                    response.status,
-                )
+                if not self._primary_failed:
+                    _LOGGER.warning(
+                        "P2000 API fout (status %s). Overschakelen naar backup",
+                        response.status,
+                    )
+                    self._primary_failed = True
 
         except Exception as exc:
-            _LOGGER.warning(
-                "Fout bij P2000 API: %s. Start backup procedure", exc
-            )
+            if not self._primary_failed:
+                _LOGGER.warning(
+                    "Fout bij P2000 API: %s. Start backup procedure", exc
+                )
+                self._primary_failed = True
 
         return await self._get_rich_rss_backup(api_filter)
 

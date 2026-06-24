@@ -80,10 +80,13 @@ class P2000Sensor(SensorEntity):
         try:
             data = await self._api.get_data(self._api_filter)
         except P2000CommunicationError as exc:
-            _LOGGER.warning("P2000 niet bereikbaar: %s", exc)
-            self._attr_available = False
+            if self._attr_available:
+                _LOGGER.warning("P2000 niet bereikbaar: %s", exc)
+                self._attr_available = False
             return
 
+        if not self._attr_available:
+            _LOGGER.info("P2000 verbinding hersteld")
         self._attr_available = True
 
         if not data:
