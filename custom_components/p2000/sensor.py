@@ -50,6 +50,7 @@ async def async_setup_entry(
         if config.get(prop):
             api_filter[prop] = 1
 
+    icon = config.get(CONF_ICON) or DEFAULT_ICON
     session = async_get_clientsession(hass)
     api = P2000Api(session)
 
@@ -63,7 +64,7 @@ class P2000Sensor(SensorEntity):
     def __init__(self, api, name, icon, api_filter, entry_id):
         self.api = api
         self.api_filter = api_filter
-        self._icon = icon
+        self._attr_icon = icon
         self._state = None
         self._attr_name = name
         self._attr_unique_id = f"p2000_{entry_id}"
@@ -78,10 +79,6 @@ class P2000Sensor(SensorEntity):
     @property
     def state(self):
         return self._state
-
-    @property
-    def icon(self):
-        return self._icon
 
     async def async_update(self):
         data = await self.api.get_data(self.api_filter)

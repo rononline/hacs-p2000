@@ -18,7 +18,7 @@ Monitor Dutch P2000 emergency pager messages (fire, police, ambulance, coastguar
 
 1. Open HACS in Home Assistant
 2. Go to **Integrations** → click the three dots → **Custom repositories**
-3. Add `https://github.com/leeuwte/p2000` as an **Integration**
+3. Add `https://github.com/rononline/hacs-p2000` as an **Integration**
 4. Search for **P2000** and install it
 5. Restart Home Assistant
 

@@ -64,12 +64,16 @@ class P2000Api:
         wanted_regios = [r.lower() for r in api_filter.get("regios", [])]
         wanted_capcodes = set(api_filter.get("capcodes", []))
         prio1_only = bool(api_filter.get("prio1"))
+        lifeliners_only = bool(api_filter.get("lifeliners"))
 
         for melding in meldingen:
             if melding.get("plaats"):
                 melding["plaats"] = self._clean_plaats(melding["plaats"])
 
             if prio1_only and melding.get("prio1") != "1":
+                continue
+
+            if lifeliners_only and not melding.get("lifeliner"):
                 continue
 
             if wanted_places:
@@ -115,6 +119,7 @@ class P2000Api:
             g.lower()
             for g in api_filter.get("gemeenten", []) + api_filter.get("woonplaatsen", [])
         ]
+        prio1_only = bool(api_filter.get("prio1"))
         service_mapping = {
             "1": "politie",
             "2": "brandweer",
@@ -149,6 +154,11 @@ class P2000Api:
                     longitude = self._safe_text(item, "lon") or None
 
                     full_text = (title + " " + description).lower()
+
+                    if prio1_only:
+                        prio = self._safe_text(item, "prio")
+                        if prio and prio != "1":
+                            continue
 
                     if wanted_cities:
                         if not any(city in full_text for city in wanted_cities):
