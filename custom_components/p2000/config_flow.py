@@ -74,11 +74,6 @@ class P2000FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 class P2000OptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         if user_input is not None:
-            new_name = user_input.get(CONF_NAME)
-            if new_name and new_name != self.config_entry.title:
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry, title=new_name
-                )
             return self.async_create_entry(title="", data=user_input)
 
         current = {**self.config_entry.data, **self.config_entry.options}

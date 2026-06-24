@@ -316,10 +316,9 @@ class P2000Api:
             str(service) for service in api_filter.get("diensten", [])
         }
         if wanted_services:
+            mapped = {_SERVICE_MAPPING[s] for s in wanted_services if s in _SERVICE_MAPPING}
             service_matches = any(
-                _SERVICE_MAPPING.get(service, "") in dienst
-                for service in wanted_services
-                for dienst in diensten
+                name in dienst for name in mapped for dienst in diensten
             )
             if is_lifeliner and "3" in wanted_services:
                 service_matches = True
