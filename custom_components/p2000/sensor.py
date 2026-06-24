@@ -23,6 +23,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
+_MAX_STATE_LENGTH = 255
 
 
 async def async_setup_entry(
@@ -88,9 +89,10 @@ class P2000Sensor(SensorEntity):
         if not data:
             return
 
-        if not data.get("melding"):
-            _LOGGER.warning("P2000: wel data maar geen 'melding' veld, update overgeslagen.")
+        tekst = data.get("tekstmelding") or data.get("melding")
+        if not tekst:
+            _LOGGER.warning("P2000: data ontvangen maar geen meldingstekst, update overgeslagen.")
             return
 
         self._attr_extra_state_attributes = data
-        self._state = data["melding"]
+        self._state = tekst[:_MAX_STATE_LENGTH]

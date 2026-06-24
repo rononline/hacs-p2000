@@ -1,10 +1,13 @@
 import json
 import logging
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
 import urllib.parse
 
 _LOGGER = logging.getLogger(__name__)
+
+_POSTCODE_PREFIX = re.compile(r'^\d{4}\s*[A-Z]{2}\s+')
 
 
 class P2000Api:
@@ -15,8 +18,6 @@ class P2000Api:
         self._session = session
 
     async def get_data(self, api_filter):
-        """Haal data op. Probeer primair API, val terug op Rijke RSS bij fouten."""
-
         if not api_filter:
             api_filter = {}
 
@@ -46,8 +47,11 @@ class P2000Api:
 
         return await self._get_rich_rss_backup(api_filter)
 
+    def _clean_plaats(self, plaats: str) -> str:
+        """Strip postcode prefix, e.g. '3079XH  Rotterdam' → 'Rotterdam'."""
+        return _POSTCODE_PREFIX.sub('', plaats).strip()
+
     def _parse_json_response(self, data, api_filter):
-        """Verwerk de officiële JSON data en filter client-side."""
         meldingen = data.get("meldingen") or []
         if not meldingen:
             return None
@@ -57,18 +61,38 @@ class P2000Api:
             for p in api_filter.get("woonplaatsen", []) + api_filter.get("gemeenten", [])
         ]
         wanted_services = api_filter.get("diensten", [])
-        service_mapping = {"1": "politie", "2": "brandweer", "3": "ambu", "4": "kustwacht"}
+        wanted_regios = [r.lower() for r in api_filter.get("regios", [])]
+        wanted_capcodes = set(api_filter.get("capcodes", []))
+        prio1_only = bool(api_filter.get("prio1"))
 
         for melding in meldingen:
+            if melding.get("plaats"):
+                melding["plaats"] = self._clean_plaats(melding["plaats"])
+
+            if prio1_only and melding.get("prio1") != "1":
+                continue
+
             if wanted_places:
                 plaats = (melding.get("plaats") or "").lower()
-                melding_text = (melding.get("melding") or melding.get("tekstmelding") or "").lower()
-                if not any(p in plaats or p in melding_text for p in wanted_places):
+                tekst = (melding.get("melding") or melding.get("tekstmelding") or "").lower()
+                if not any(p in plaats or p in tekst for p in wanted_places):
+                    continue
+
+            if wanted_regios:
+                regio = (melding.get("regio") or "").lower()
+                if not any(r in regio for r in wanted_regios):
                     continue
 
             if wanted_services:
                 dienst_id = str(melding.get("dienstid") or "")
                 if not any(str(code) == dienst_id for code in wanted_services):
+                    continue
+
+            if wanted_capcodes:
+                melding_capcodes = {
+                    c.get("capcode", "") for c in (melding.get("capcodes") or [])
+                }
+                if not wanted_capcodes & melding_capcodes:
                     continue
 
             if "lat" in melding:
@@ -80,21 +104,17 @@ class P2000Api:
         return None
 
     def _safe_text(self, item, tag_name):
-        """Veilige manier om tekst uit XML te halen zonder te crashen."""
         el = item.find(tag_name)
         if el is not None and el.text:
             return el.text
         return ""
 
     async def _get_rich_rss_backup(self, api_filter):
-        """Haalt de rijke RSS op en filtert deze handmatig."""
-
         wanted_services = api_filter.get("diensten", [])
         wanted_cities = [
             g.lower()
             for g in api_filter.get("gemeenten", []) + api_filter.get("woonplaatsen", [])
         ]
-
         service_mapping = {
             "1": "politie",
             "2": "brandweer",
