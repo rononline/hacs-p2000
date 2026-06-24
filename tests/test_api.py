@@ -1,6 +1,7 @@
 """Regression tests for the P2000 response parsers."""
 
 import importlib.util
+import json
 import unittest
 from pathlib import Path
 
@@ -11,6 +12,62 @@ API_PATH = (
 SPEC = importlib.util.spec_from_file_location("p2000_api", API_PATH)
 API_MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(API_MODULE)
+
+
+class FakeResponse:
+    def __init__(self, status, data=None, text=None):
+        self.status = status
+        self._data = data
+        self._text = text
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+    async def json(self, content_type=None):
+        return self._data
+
+    async def text(self):
+        if self._text is not None:
+            return self._text
+        return json.dumps(self._data)
+
+
+class FakeSession:
+    def __init__(self, responses):
+        self._responses = iter(responses)
+
+    def get(self, *args, **kwargs):
+        return next(self._responses)
+
+
+class TestApiFallback(unittest.IsolatedAsyncioTestCase):
+    async def test_invalid_primary_schema_uses_rss_backup(self):
+        rss = """\
+<rss><channel><item>
+  <title>0102998 - A1 Teststraat Amsterdam</title>
+  <code>0102998</code>
+  <message>A1 Teststraat Amsterdam</message>
+  <RegName>Amsterdam Amstelland</RegName>
+  <Dienst>Brandweerdiensten</Dienst>
+  <pubDate>Wed, 24 Jun 2026 13:38:16 +0100</pubDate>
+</item></channel></rss>
+"""
+        api = API_MODULE.P2000Api(
+            FakeSession(
+                [
+                    FakeResponse(200, data=[]),
+                    FakeResponse(200, text=rss),
+                ]
+            )
+        )
+
+        with self.assertLogs(level="WARNING"):
+            result = await api.get_data({})
+
+        self.assertEqual("rss", result["source"])
 
 
 class TestJsonParser(unittest.TestCase):
@@ -70,7 +127,7 @@ class TestJsonParser(unittest.TestCase):
         self.assertEqual("Brandweer naar Oudewater", result["melding"])
         self.assertEqual("Oudewater", result["plaats"])
         self.assertEqual("BRAND", result["capcode"])
-        self.assertEqual("52.0", result["latitude"])
+        self.assertEqual(52.0, result["latitude"])
         self.assertEqual("primary", result["source"])
 
     def test_does_not_mix_filters_between_subitems(self):
@@ -97,10 +154,71 @@ class TestJsonParser(unittest.TestCase):
         self.assertEqual("Lifeliner", result["dienst"])
 
     def test_invalid_primary_payload_is_ignored(self):
-        self.assertIsNone(self.api._parse_json_response([], {}))
-        self.assertIsNone(
+        with self.assertRaises(API_MODULE.P2000ResponseError):
+            self.api._parse_json_response([], {})
+        with self.assertRaises(API_MODULE.P2000ResponseError):
             self.api._parse_json_response({"meldingen": "invalid"}, {})
+
+    def test_empty_primary_feed_is_a_valid_response(self):
+        self.assertIsNone(
+            self.api._parse_json_response({"meldingen": []}, {})
         )
+
+    def test_place_filter_does_not_match_inside_another_word(self):
+        data = {
+            "meldingen": [
+                {
+                    "melding": "Melding aan de Edeseweg",
+                    "dienstid": "2",
+                    "dienst": "Brandweer",
+                    "regio": "Gelderland",
+                    "plaats": "Wageningen",
+                    "prio1": "1",
+                    "capcodes": [],
+                }
+            ]
+        }
+
+        self.assertIsNone(
+            self.api._parse_json_response(data, {"woonplaatsen": ["Ede"]})
+        )
+
+    def test_exact_primary_place_still_matches(self):
+        result = self.api._parse_json_response(
+            self.data, {"woonplaatsen": ["Oudewater"]}
+        )
+
+        self.assertIsNotNone(result)
+
+    def test_primary_date_time_and_coordinates_are_normalized(self):
+        melding = {
+            "melding": "Testmelding",
+            "tekstmelding": "Testmelding",
+            "dienstid": "2",
+            "dienst": "Brandweer",
+            "datum": "24-06",
+            "tijd": "13:20 - 13:22",
+            "lat": "52.123",
+            "lon": "4.456",
+            "prio1": "1",
+            "capcodes": [],
+        }
+
+        result = self.api._normalize_json_alert(melding)
+
+        self.assertRegex(result["datum"], r"^\d{4}-06-24$")
+        self.assertRegex(
+            result["tijd"],
+            r"^\d{4}-06-24T13:22:00[+-]\d{2}:\d{2}$",
+        )
+        self.assertEqual(52.123, result["latitude"])
+        self.assertEqual(4.456, result["longitude"])
+
+    def test_leap_day_is_normalized(self):
+        date, timestamp = self.api._primary_datetime("29-02", "12:34")
+
+        self.assertRegex(date, r"^\d{4}-02-29$")
+        self.assertIn("T12:34:00", timestamp)
 
     def test_newest_incident_wins_over_older_concrete_service(self):
         data = {
@@ -177,7 +295,10 @@ class TestRssParser(unittest.TestCase):
         self.assertEqual("Brandweerdiensten", result["dienst"])
         self.assertEqual("1", result["prio"])
         self.assertEqual("2026-06-24", result["datum"])
-        self.assertEqual("52.3", result["latitude"])
+        self.assertEqual(52.3, result["latitude"])
+        self.assertEqual(
+            "2026-06-24T13:38:16+01:00", result["tijd"]
+        )
         self.assertEqual(
             {"2029577", "0102998"},
             {entry["capcode"] for entry in result["capcodes"]},
@@ -190,7 +311,7 @@ class TestRssParser(unittest.TestCase):
         )
 
         self.assertEqual("Brandweerdiensten", result["dienst"])
-        self.assertEqual("52.3", result["latitude"])
+        self.assertEqual(52.3, result["latitude"])
 
     def test_lifeliner_filter(self):
         result = self.api._parse_rss_response(
@@ -213,6 +334,13 @@ class TestRssParser(unittest.TestCase):
         result = self.api._parse_rss_response(rss, {"prio1": 1})
 
         self.assertEqual("A1 Lifeliner naar Gouda", result["melding"])
+
+    def test_rss_place_filter_does_not_match_inside_another_word(self):
+        result = self.api._parse_rss_response(
+            self.rss, {"woonplaatsen": ["Dam"]}
+        )
+
+        self.assertIsNone(result)
 
 
 if __name__ == "__main__":

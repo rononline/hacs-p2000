@@ -54,15 +54,15 @@ The sensor state holds the latest alert message. The following attributes are av
 | Attribute | Description |
 |---|---|
 | `melding` | Full alert text |
-| `tijd` | Time of the alert |
-| `datum` | Date of the alert |
+| `tijd` | Alert timestamp in ISO 8601 format |
+| `datum` | Alert date in `YYYY-MM-DD` format |
 | `capcode` | First capcode associated with the alert |
 | `capcodes` | All capcodes associated with the alert |
 | `dienst` | Emergency service (Brandweer, Ambulance, etc.) |
 | `regio` | Emergency service region |
 | `prio` | `1` for priority 1, otherwise `Unknown` |
-| `latitude` | Latitude (if available) |
-| `longitude` | Longitude (if available) |
+| `latitude` | Numeric latitude (if available) |
+| `longitude` | Numeric longitude (if available) |
 | `source` | Data source: `primary` or `rss` |
 
 The core attributes above use the same format for both data sources. The

@@ -5,6 +5,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from email.utils import parsedate_to_datetime
+from zoneinfo import ZoneInfo
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ _PRIO1_RSS = re.compile(
 )
 
 DIENSTID_LIFELINER = "5"
+_LOCAL_TIMEZONE = ZoneInfo("Europe/Amsterdam")
 
 _SERVICE_MAPPING = {
     "1": "politie",
@@ -27,6 +29,10 @@ _SERVICE_MAPPING = {
 
 class P2000CommunicationError(Exception):
     """Raised when all P2000 data sources are unreachable."""
+
+
+class P2000ResponseError(ValueError):
+    """Raised when a P2000 data source returns an invalid response."""
 
 
 class P2000Api:
@@ -85,6 +91,70 @@ class P2000Api:
         return _POSTCODE_PREFIX.sub("", plaats).strip()
 
     @staticmethod
+    def _contains_term(text, term):
+        """Match a configured term without matching inside another word."""
+        return re.search(
+            rf"(?<!\w){re.escape(term)}(?!\w)",
+            text,
+            re.IGNORECASE,
+        ) is not None
+
+    @classmethod
+    def _matches_place(cls, plaats, tekst, wanted_places):
+        cleaned_place = cls._clean_plaats(plaats).casefold() if plaats else ""
+        return any(
+            cleaned_place == wanted.casefold()
+            or cls._contains_term(tekst, wanted)
+            for wanted in wanted_places
+        )
+
+    @staticmethod
+    def _coordinate(value):
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _primary_datetime(date_value, time_value):
+        """Convert the primary API's DD-MM and HH:MM values to ISO 8601."""
+        if not date_value:
+            return "", ""
+
+        try:
+            day, month = (int(part) for part in date_value.split("-", 1))
+            now = datetime.now(_LOCAL_TIMEZONE)
+            candidates = []
+            for year in range(now.year - 4, now.year + 5):
+                try:
+                    candidates.append(
+                        datetime(year, month, day, tzinfo=_LOCAL_TIMEZONE)
+                    )
+                except ValueError:
+                    continue
+            if not candidates:
+                raise ValueError("Ongeldige datum")
+            date = min(candidates, key=lambda candidate: abs(candidate - now))
+        except (TypeError, ValueError):
+            return date_value, time_value or ""
+
+        if not time_value:
+            return date.date().isoformat(), ""
+
+        # Samengevoegde incidenten kunnen een bereik bevatten; gebruik het
+        # meest recente tijdstip uit de API-waarde.
+        latest_time = time_value.rsplit("-", 1)[-1].strip()
+        try:
+            hour, minute = (int(part) for part in latest_time.split(":", 1))
+            timestamp = date.replace(hour=hour, minute=minute)
+        except (TypeError, ValueError):
+            return date.date().isoformat(), time_value
+
+        return date.date().isoformat(), timestamp.isoformat()
+
+    @staticmethod
     def _json_capcodes(melding):
         return {
             str(capcode.get("capcode") or "")
@@ -112,13 +182,13 @@ class P2000Api:
             return False
 
         if wanted_places:
-            plaats = (melding.get("plaats") or "").lower()
+            plaats = melding.get("plaats") or ""
             tekst = (
                 melding.get("tekstmelding")
                 or melding.get("melding")
                 or ""
-            ).lower()
-            if not any(place in plaats or place in tekst for place in wanted_places):
+            )
+            if not self._matches_place(plaats, tekst, wanted_places):
                 return False
 
         if wanted_regios:
@@ -146,11 +216,14 @@ class P2000Api:
         if alert.get("plaats"):
             alert["plaats"] = self._clean_plaats(alert["plaats"])
 
-        latitude = alert.pop("lat", None)
-        longitude = alert.pop("lon", None)
+        latitude = self._coordinate(alert.pop("lat", None))
+        longitude = self._coordinate(alert.pop("lon", None))
         capcodes = list(alert.get("capcodes") or [])
         text = alert.get("tekstmelding") or alert.get("melding") or ""
         prio1 = str(alert.get("prio1") or "") == "1"
+        date, time = self._primary_datetime(
+            alert.get("datum"), alert.get("tijd")
+        )
 
         alert.update(
             {
@@ -161,6 +234,8 @@ class P2000Api:
                 ),
                 "capcodes": capcodes,
                 "prio": "1" if prio1 else "Unknown",
+                "datum": date,
+                "tijd": time,
                 "latitude": latitude,
                 "longitude": longitude,
                 "source": "primary",
@@ -170,11 +245,18 @@ class P2000Api:
 
     def _parse_json_response(self, data, api_filter):
         if not isinstance(data, dict):
-            return None
+            raise P2000ResponseError("Primaire API-response is geen object")
 
-        meldingen = data.get("meldingen") or []
+        if "meldingen" not in data:
+            raise P2000ResponseError(
+                "Primaire API-response bevat geen 'meldingen'"
+            )
+
+        meldingen = data["meldingen"]
         if not isinstance(meldingen, list):
-            return None
+            raise P2000ResponseError(
+                "Primaire API-veld 'meldingen' is geen lijst"
+            )
 
         wanted_places = [
             place.lower()
@@ -222,11 +304,12 @@ class P2000Api:
         return ""
 
     @staticmethod
-    def _parse_rss_date(pub_date):
+    def _parse_rss_datetime(pub_date):
         try:
-            return parsedate_to_datetime(pub_date).strftime("%Y-%m-%d")
+            timestamp = parsedate_to_datetime(pub_date)
+            return timestamp.date().isoformat(), timestamp.isoformat()
         except (TypeError, ValueError, OverflowError):
-            return datetime.now().strftime("%Y-%m-%d")
+            return "", pub_date or ""
 
     def _rss_item(self, item):
         title = self._safe_text(item, "title")
@@ -238,8 +321,8 @@ class P2000Api:
             "dienst": self._safe_text(item, "Dienst"),
             "code": self._safe_text(item, "code"),
             "regio": self._safe_text(item, "RegName"),
-            "latitude": self._safe_text(item, "lat") or None,
-            "longitude": self._safe_text(item, "lon") or None,
+            "latitude": self._coordinate(self._safe_text(item, "lat")),
+            "longitude": self._coordinate(self._safe_text(item, "lon")),
             "full_text": f"{title} {message}".lower(),
         }
 
@@ -285,7 +368,7 @@ class P2000Api:
             )
         ]
         if wanted_places and not any(
-            place in full_text for place in wanted_places
+            self._contains_term(full_text, place) for place in wanted_places
         ):
             return False
 
@@ -309,7 +392,11 @@ class P2000Api:
             str(service) for service in api_filter.get("diensten", [])
         }
         if wanted_services:
-            mapped = {_SERVICE_MAPPING[s] for s in wanted_services if s in _SERVICE_MAPPING}
+            mapped = {
+                _SERVICE_MAPPING[service]
+                for service in wanted_services
+                if service in _SERVICE_MAPPING
+            }
             service_matches = any(
                 name in dienst for name in mapped for dienst in diensten
             )
@@ -329,6 +416,7 @@ class P2000Api:
             )
         ]
         text = best["message"] or best["title"]
+        date, time = self._parse_rss_datetime(best["pub_date"])
         prio1 = any(
             _PRIO1_RSS.match(variant["message"])
             or _PRIO1_RSS.match(variant["title"])
@@ -338,8 +426,8 @@ class P2000Api:
         return {
             "melding": text,
             "tekstmelding": text,
-            "tijd": best["pub_date"],
-            "datum": self._parse_rss_date(best["pub_date"]),
+            "tijd": time,
+            "datum": date,
             "capcode": capcodes[0]["capcode"] if capcodes else "",
             "capcodes": capcodes,
             "dienst": best["dienst"] or "RSS",
