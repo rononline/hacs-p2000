@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.core import callback
 from homeassistant.const import CONF_ICON, CONF_NAME
 from homeassistant.helpers.selector import (
     BooleanSelector,
@@ -69,6 +70,7 @@ class P2000FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="user", data_schema=_schema({}))
 
     @staticmethod
+    @callback
     def async_get_options_flow(config_entry):
         return P2000OptionsFlow(config_entry)
 

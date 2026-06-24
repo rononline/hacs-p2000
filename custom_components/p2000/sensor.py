@@ -49,6 +49,7 @@ async def async_setup_entry(
     for prop in [CONF_PRIO1, CONF_LIFE]:
         if config.get(prop):
             api_filter[prop] = 1
+
     session = async_get_clientsession(hass)
     api = P2000Api(session)
 
