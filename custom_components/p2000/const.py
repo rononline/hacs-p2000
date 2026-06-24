@@ -1,0 +1,11 @@
+DOMAIN = "p2000"
+DEFAULT_NAME = "P2000"
+DEFAULT_ICON = "mdi:fire-truck"
+
+CONF_GEMEENTEN = "gemeenten"
+CONF_CAPCODES = "capcodes"
+CONF_DIENSTEN = "diensten"
+CONF_WOONPLAATSEN = "woonplaatsen"
+CONF_REGIOS = "regios"
+CONF_PRIO1 = "prio1"
+CONF_LIFE = "lifeliners"
