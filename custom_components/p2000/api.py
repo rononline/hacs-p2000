@@ -59,7 +59,7 @@ class P2000Api:
                 if response.status == 200:
                     try:
                         data = await response.json(content_type=None)
-                    except Exception:
+                    except (TypeError, ValueError):
                         text = await response.text()
                         data = json.loads(text)
 

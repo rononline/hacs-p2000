@@ -49,7 +49,8 @@ You can update the filters at any time via **Settings → Devices & Services →
 
 ## Sensor attributes
 
-The sensor state holds the latest alert message. The following attributes are available:
+The sensor state holds the latest known alert message and keeps that last
+known state during temporary source outages. The following attributes are available:
 
 | Attribute | Description |
 |---|---|
