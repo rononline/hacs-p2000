@@ -3,10 +3,16 @@ from datetime import timedelta
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_ICON, CONF_NAME
+from homeassistant.const import (
+    CONF_ICON,
+    CONF_NAME,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .api import P2000Api, P2000CommunicationError
 from .const import (
@@ -59,7 +65,7 @@ async def async_setup_entry(
     )
 
 
-class P2000Sensor(SensorEntity):
+class P2000Sensor(RestoreEntity, SensorEntity):
     def __init__(self, api, name, icon, api_filter, entry_id):
         self._api = api
         self._api_filter = api_filter
@@ -69,6 +75,7 @@ class P2000Sensor(SensorEntity):
         self._attr_unique_id = f"p2000_{entry_id}"
         self._attr_available = True
         self._attr_extra_state_attributes = {}
+        self._communication_failed = False
         self._attr_device_info = {
             "identifiers": {("p2000", entry_id)},
             "name": name,
@@ -76,17 +83,47 @@ class P2000Sensor(SensorEntity):
             "model": "P2000 Sensor",
         }
 
+    async def async_added_to_hass(self) -> None:
+        """Restore the latest alert after a restart or config reload."""
+        await super().async_added_to_hass()
+
+        if self._attr_native_value is not None:
+            return
+
+        last_state = await self.async_get_last_state()
+        if (
+            last_state is None
+            or last_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE)
+        ):
+            return
+
+        self._attr_native_value = last_state.state
+        self._attr_extra_state_attributes = {
+            key: value
+            for key, value in last_state.attributes.items()
+            if key not in ("friendly_name", "icon")
+        }
+        self._attr_available = True
+
     async def async_update(self):
         try:
             data = await self._api.get_data(self._api_filter)
         except P2000CommunicationError as exc:
-            if self._attr_available:
-                _LOGGER.warning("P2000 niet bereikbaar: %s", exc)
+            if self._attr_native_value is None:
                 self._attr_available = False
+            else:
+                # Een tijdelijke storing mag de laatst ontvangen melding niet
+                # vervangen door unavailable.
+                self._attr_available = True
+
+            if not self._communication_failed:
+                _LOGGER.warning("P2000 niet bereikbaar: %s", exc)
+                self._communication_failed = True
             return
 
-        if not self._attr_available:
+        if self._communication_failed:
             _LOGGER.info("P2000 verbinding hersteld")
+            self._communication_failed = False
         self._attr_available = True
 
         if not data:
